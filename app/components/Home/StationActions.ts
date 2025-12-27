@@ -46,6 +46,34 @@ export async function upsertStation(
       where: { id: validatedData.id || "" },
     });
 
+    const hasOverlap = await prisma.station.findFirst({
+      where: {
+        id: { not: validatedData.id || undefined },
+        signalType: validatedData.signalType,
+        OR: [
+          {
+            AND: [
+              { lowestFrequency: { lte: validatedData.lowestFrequency } },
+              { highestFrequency: { gte: validatedData.lowestFrequency } },
+            ],
+          },
+          {
+            AND: [
+              { lowestFrequency: { lte: validatedData.highestFrequency } },
+              { highestFrequency: { gte: validatedData.highestFrequency } },
+            ],
+          },
+        ],
+      },
+    });
+
+    if (hasOverlap) {
+      return {
+        success: false,
+        message: "Frequency range overlaps with an existing station",
+      };
+    }
+
     if (stationExisting) {
       const station = await prisma.station.update({
         where: { id: validatedData.id },
