@@ -1,9 +1,9 @@
-import { SignalType } from "@/app/components/types";
-import { spawn } from "child_process";
+import { getStation } from "@/app/components/Home/StationActions";
+import { SignalType } from "@/generated/prisma/enums";
+import { YoutubeService } from "@/lib/YoutubeService";
 import { NextRequest } from "next/server";
-import kill from "tree-kill";
 
-export function GET(request: NextRequest) {
+export async function GET(request: NextRequest) {
   const signalType = request.nextUrl.searchParams
     .get("signalType")
     ?.toUpperCase();
@@ -25,91 +25,38 @@ export function GET(request: NextRequest) {
     });
   }
 
-  const url = "https://www.youtube.com/watch?v=XSXEaikz0Bc";
+  const station = await getStation(signalType as SignalType, Number(channel));
+  if (!station.success || !station.data) {
+    return new Response(JSON.stringify({ error: "Failed to get stream URL" }), {
+      status: 500,
+    });
+  }
 
-  const ytdlp = spawn("yt-dlp", ["--no-live-from-start", "-o", "-", url]);
+  let youtubeService: YoutubeService | null = null;
 
-  // Kill yt-dlp if client disconnects
+  try {
+    youtubeService = new YoutubeService(station.data.streamUrl);
+  } catch (err) {
+    return new Response(
+      JSON.stringify({ error: "Failed to initialize YouTube service" }),
+      { status: 500 }
+    );
+  }
+
+  if (!youtubeService.videoStream) {
+    return new Response(
+      JSON.stringify({ error: "Failed to create video stream" }),
+      { status: 500 }
+    );
+  }
+
   request.signal.addEventListener("abort", () => {
-    console.log("Client disconnected, killing yt-dlp and all child processes");
-    if (ytdlp.pid) {
-      kill(ytdlp.pid);
-    }
+    youtubeService.stopStream();
   });
 
-  // Create a ReadableStream from the stdout
-  const stream = new ReadableStream({
-    start(controller) {
-      let isClosed = false;
-
-      const onData = (chunk: Buffer) => {
-        if (!isClosed) {
-          try {
-            controller.enqueue(chunk);
-          } catch (err) {
-            console.error("Error enqueueing chunk:", err);
-            isClosed = true;
-            if (ytdlp.pid) {
-              kill(ytdlp.pid);
-            }
-          }
-        }
-      };
-
-      const onStderr = (chunk: Buffer) => {
-        console.error("STDERR:", chunk.toString());
-      };
-
-      const onClose = (code: number | null) => {
-        if (isClosed) return;
-        isClosed = true;
-
-        ytdlp.stdout.removeListener("data", onData);
-        ytdlp.stderr.removeListener("data", onStderr);
-
-        if (code === 0) {
-          try {
-            controller.close();
-          } catch (err) {
-            console.error("Error closing controller:", err);
-          }
-        } else {
-          try {
-            controller.error(new Error(`yt-dlp exited with code ${code}`));
-          } catch (err) {
-            console.error("Error erroring controller:", err);
-          }
-        }
-      };
-
-      const onError = (err: Error) => {
-        console.error("Process error:", err);
-        if (!isClosed) {
-          isClosed = true;
-          try {
-            controller.error(err);
-          } catch (e) {
-            console.error("Error erroring controller:", e);
-          }
-        }
-      };
-
-      ytdlp.stdout.on("data", onData);
-      ytdlp.stderr.on("data", onStderr);
-      ytdlp.on("close", onClose);
-      ytdlp.on("error", onError);
-    },
-    cancel() {
-      console.log("Stream cancelled, killing yt-dlp and all child processes");
-      if (ytdlp.pid) {
-        kill(ytdlp.pid);
-      }
-    },
-  });
-
-  return new Response(stream, {
+  return new Response(youtubeService.videoStream, {
     headers: {
-      "Content-Type": "audio/webm",
+      "Content-Type": "video/mp4",
       "Cache-Control": "no-cache",
     },
   });
