@@ -1,5 +1,6 @@
 "use client";
 import { Station } from "@/generated/prisma/client";
+import { AnimatePresence } from "framer-motion";
 import { Filter, Loader2, Radio, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePopup } from "../Popup/PopupProvider";
@@ -78,7 +79,11 @@ const HomePage = () => {
 
   return (
     <>
-      <div className="max-w-5xl mx-auto container px-4 py-8 overflow-y-auto min-h-0">
+      <div
+        className={`max-w-5xl mx-auto container px-4 py-8 ${
+          playingStation ? "pb-32" : ""
+        }`}
+      >
         {/* Header Section */}
         <div className="flex items-center justify-between mb-8">
           <div>
@@ -227,12 +232,16 @@ const HomePage = () => {
       </div>
 
       {/* Audio Player */}
-      {playingStation && (
-        <AudioPlayer
-          station={playingStation}
-          onClose={() => setPlayingStation(null)}
-        />
-      )}
+      <AnimatePresence>
+        {playingStation && (
+          <AudioPlayer
+            station={playingStation}
+            onClose={() => {
+              setPlayingStation(null);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 };

@@ -2,6 +2,7 @@
 
 import { Station } from "@/generated/prisma/browser";
 import { getCookie, setCookie } from "cookies-next";
+import { motion } from "framer-motion";
 import { Pause, Play, Radio, Volume2, VolumeX, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
@@ -39,7 +40,6 @@ const AudioPlayer = ({ station, onClose }: AudioPlayerProps) => {
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
     const handleError = (e: Event) => {
-      console.error("Audio error:", e);
       setIsLoading(false);
       setIsPlaying(false);
     };
@@ -95,12 +95,28 @@ const AudioPlayer = ({ station, onClose }: AudioPlayerProps) => {
     }
   };
 
+  async function handleClose() {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.src = "";
+      audio.load();
+    }
+
+    onClose();
+  }
+
   const streamUrl = `/api/stations?bandType=${station.bandType}&channel=${
     (station.lowestFrequency + station.highestFrequency) / 2
   }`;
 
   return (
-    <div className="sticky bottom-0 left-0 right-0 z-50 bg-base-200 shadow-2xl border-t border-base-300">
+    <motion.div
+      initial={{ y: 200 }}
+      animate={{ y: 0 }}
+      exit={{ y: 200 }}
+      transition={{ type: "spring", damping: 25, stiffness: 300 }}
+      className="fixed bottom-0 left-0 right-0 z-50 bg-base-200 shadow-2xl border-t border-base-300"
+    >
       <div className="max-w-7xl mx-auto px-4 py-4">
         <div className="flex items-center justify-between gap-4">
           {/* Station Info */}
@@ -160,7 +176,7 @@ const AudioPlayer = ({ station, onClose }: AudioPlayerProps) => {
 
             {/* Close Button */}
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="btn btn-ghost btn-sm btn-circle"
             >
               <X className="w-5 h-5" />
@@ -171,7 +187,7 @@ const AudioPlayer = ({ station, onClose }: AudioPlayerProps) => {
 
       {/* Hidden Audio Element */}
       <audio ref={audioRef} src={streamUrl} preload="auto" />
-    </div>
+    </motion.div>
   );
 };
 

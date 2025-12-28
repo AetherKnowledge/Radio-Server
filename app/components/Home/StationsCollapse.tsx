@@ -81,6 +81,7 @@ const StationCollapse = ({
               legend="Station Name"
               defaultValue={station.name}
               className="w-full"
+              required
             />
           </div>
 
@@ -93,6 +94,7 @@ const StationCollapse = ({
                 defaultValue={station.lowestFrequency.toString()}
                 className="w-full"
                 type="number"
+                required
               />
             </div>
             <div className="form-control">
@@ -102,6 +104,7 @@ const StationCollapse = ({
                 defaultValue={station.highestFrequency.toString()}
                 className="w-full"
                 type="number"
+                required
               />
             </div>
             <div className="form-control">
@@ -115,6 +118,7 @@ const StationCollapse = ({
                 ]}
                 defaultValue={station.bandType}
                 className="w-full"
+                required
               />
             </div>
           </div>
@@ -127,6 +131,7 @@ const StationCollapse = ({
               defaultValue={station.streamUrl}
               className="w-full"
               type="url"
+              required
             />
           </div>
 

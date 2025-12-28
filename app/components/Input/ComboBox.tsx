@@ -33,7 +33,7 @@ const ComboBox = ({
       )}
       <select
         name={name}
-        className={`select ${size} outline-none ring-0 focus:outline-none focus:ring-0 rounded ${bgColor} ${
+        className={`select border-0 ${size} outline-none ring-0 focus:outline-none focus:ring-0 rounded ${bgColor} ${
           className || "w-full"
         }`}
         defaultValue={defaultValue}

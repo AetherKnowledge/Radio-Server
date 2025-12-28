@@ -24,9 +24,9 @@ const Legend = ({
       className={`pl-1 fieldset-legend pt-1 pb-1 gap-1 justify-between w-full ${textSizeClass} font-medium`}
     >
       <span>
-        {number ? number.toString() + ". " : ""} {legend}
+        {number ? number.toString() + ". " : ""} {legend}{" "}
+        {required ? <span className="text-error">*</span> : ""}
       </span>
-      {required && <span className="text-error">Required</span>}
     </legend>
   );
 };

@@ -22,6 +22,26 @@ export async function getStations(): Promise<ActionResult<Station[]>> {
   }
 }
 
+export async function getStationById(
+  id: string
+): Promise<ActionResult<Station>> {
+  try {
+    if (!isAuthenticated()) {
+      return { success: false, message: "Unauthorized" };
+    }
+    const station = await prisma.station.findUnique({
+      where: { id },
+    });
+    if (!station) {
+      return { success: false, message: "Station not found" };
+    }
+    return { success: true, data: station };
+  } catch (err) {
+    console.error("Error fetching station by ID:", err);
+    return { success: false, message: (err as Error).message };
+  }
+}
+
 export async function createStation(): Promise<ActionResult<Station>> {
   try {
     if (!isAuthenticated()) {
@@ -79,6 +99,13 @@ export async function updateStation(
 
     if (!stationExisting) {
       return { success: false, message: "Station not found" };
+    }
+
+    if (validatedData.highestFrequency < validatedData.lowestFrequency) {
+      return {
+        success: false,
+        message: "Highest frequency must be greater than lowest frequency",
+      };
     }
 
     const hasOverlap = await prisma.station.findFirst({

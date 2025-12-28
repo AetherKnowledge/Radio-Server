@@ -16,6 +16,7 @@
     "better-sqlite3": "^12.5.0",
     "cookies-next": "^6.1.1",
     "dotenv": "^17.2.3",
+    "framer-motion": "^12.23.26",
     "lucide-react": "^0.562.0",
     "motion": "^12.23.26",
     "next": "16.1.1",
@@ -40,6 +41,7 @@
     "eslint-config-next": "16.1.1",
     "prisma": "^7.2.0",
     "tailwindcss": "^4",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   },
   "browserslist": "> 1%"

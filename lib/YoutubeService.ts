@@ -22,6 +22,7 @@ export class YoutubeService {
   private readonly MAX_BUFFER_SIZE = 50; // Keep first 50 chunks for new clients
 
   public static playingStreams: Map<string, YoutubeService> = new Map();
+  private verboseLogging: boolean = true;
 
   private constructor(station: Station) {
     this.station = station;
@@ -49,6 +50,7 @@ export class YoutubeService {
   }
 
   public static createService(station: Station): YoutubeService {
+    console.log(YoutubeService.playingStreams.values().map((s) => s.station));
     const existingStream = YoutubeService.playingStreams.get(station.id);
     if (existingStream) {
       console.log("Reusing existing livestream service");
@@ -117,9 +119,12 @@ export class YoutubeService {
 
     // Pipe yt-dlp output to ffmpeg input
     this.ytDlpProcess.stdout.pipe(this.ffmpegProcess.stdin);
-    this.ytDlpProcess.stderr.on("data", (chunk: Buffer) => {
-      console.error("yt-dlp STDERR:", chunk.toString());
-    });
+
+    if (this.verboseLogging) {
+      this.ytDlpProcess.stderr.on("data", (chunk: Buffer) => {
+        console.error("yt-dlp STDERR:", chunk.toString());
+      });
+    }
 
     // Broadcast data to all connected controllers
     this.ffmpegProcess.stdout.on("data", (chunk: Buffer) => {
@@ -143,9 +148,11 @@ export class YoutubeService {
       });
     });
 
-    this.ffmpegProcess.stderr.on("data", (chunk: Buffer) => {
-      console.error("ffmpeg STDERR:", chunk.toString());
-    });
+    if (this.verboseLogging) {
+      this.ffmpegProcess.stderr.on("data", (chunk: Buffer) => {
+        console.error("ffmpeg STDERR:", chunk.toString());
+      });
+    }
 
     this.ffmpegProcess.on("close", (code: number | null) => {
       console.log(`ffmpeg closed with code ${code}`);
@@ -206,9 +213,11 @@ export class YoutubeService {
       });
     });
 
-    ytdlp.stderr.on("data", (chunk: Buffer) => {
-      console.error("yt-dlp STDERR:", chunk.toString());
-    });
+    if (this.verboseLogging) {
+      ytdlp.stderr.on("data", (chunk: Buffer) => {
+        console.error("yt-dlp STDERR:", chunk.toString());
+      });
+    }
 
     ytdlp.on("close", (code: number | null) => {
       console.log(`yt-dlp closed with code ${code}`);
@@ -279,9 +288,6 @@ export class YoutubeService {
     return new ReadableStream({
       start: (controller) => {
         // Send buffered chunks to new client first
-        console.log(
-          `Sending ${this.chunkBuffer.length} buffered chunks to new client`
-        );
         for (const chunk of this.chunkBuffer) {
           try {
             controller.enqueue(chunk);

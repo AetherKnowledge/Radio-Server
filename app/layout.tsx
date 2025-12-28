@@ -37,9 +37,7 @@ export default async function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <PopupProvider>
-          <div className="min-h-screen bg-base-200">
-            <main>{children}</main>
-          </div>
+          <div className="min-h-screen bg-base-200">{children}</div>
         </PopupProvider>
       </body>
     </html>
