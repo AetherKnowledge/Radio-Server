@@ -8,16 +8,19 @@ import TextBox from "../Input/TextBox";
 import { usePopup } from "../Popup/PopupProvider";
 import { updateStation } from "./StationActions";
 import DeleteButton from "./StationButtons/DeleteButton";
+import PlayButton from "./StationButtons/PlayButton";
 import SaveButton from "./StationButtons/SaveButton";
 
 const StationCollapse = ({
   station,
   onSave,
   onDelete,
+  onPlay,
 }: {
   station: Station;
   onSave?: (station: Station) => void;
   onDelete?: () => void;
+  onPlay?: (station: Station) => void;
 }) => {
   const inputId = station.id + "-collapse";
   const statusPopup = usePopup();
@@ -129,6 +132,7 @@ const StationCollapse = ({
 
           {/* Action Buttons */}
           <div className="flex flex-row gap-3 justify-end items-center mt-4 pt-4 border-t border-base-300 pb-6">
+            <PlayButton onClick={() => onPlay?.(station)} />
             <SaveButton loading={saving} />
             <DeleteButton station={station} onDelete={onDelete} />
           </div>

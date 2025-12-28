@@ -1,10 +1,9 @@
-import { Radio } from "lucide-react";
 import type { Metadata } from "next";
 import { PublicEnvScript } from "next-runtime-env";
 import { Geist, Geist_Mono } from "next/font/google";
+import { cookies } from "next/headers";
 import PopupProvider from "./components/Popup/PopupProvider";
 import "./globals.css";
-import ThemeController from "./ThemeController";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -21,13 +20,16 @@ export const metadata: Metadata = {
   description: "Manage your radio stations",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = cookies();
+  const theme = (await cookieStore).get("theme")?.value || "light";
+
   return (
-    <html lang="en">
+    <html lang="en" data-theme={theme}>
       <head>
         <PublicEnvScript />
       </head>
@@ -36,21 +38,7 @@ export default function RootLayout({
       >
         <PopupProvider>
           <div className="min-h-screen bg-base-200">
-            {/* Navbar */}
-            <div className="navbar bg-base-100 shadow-lg sticky top-0 z-50">
-              <div className="flex-1">
-                <a className="btn btn-ghost text-xl gap-2">
-                  <Radio className="w-6 h-6" />
-                  Radio Server
-                </a>
-              </div>
-              <div className="flex-none">
-                <ThemeController />
-              </div>
-            </div>
-
-            {/* Main Content */}
-            <main className="container mx-auto px-4 py-8">{children}</main>
+            <main>{children}</main>
           </div>
         </PopupProvider>
       </body>
