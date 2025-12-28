@@ -6,7 +6,7 @@ import { useState } from "react";
 import ComboBox from "../Input/ComboBox";
 import TextBox from "../Input/TextBox";
 import { usePopup } from "../Popup/PopupProvider";
-import { upsertStation } from "./StationActions";
+import { updateStation } from "./StationActions";
 import DeleteButton from "./StationButtons/DeleteButton";
 import SaveButton from "./StationButtons/SaveButton";
 
@@ -27,7 +27,7 @@ const StationCollapse = ({
     event.preventDefault();
     setSaving(true);
     const formData = new FormData(event.currentTarget);
-    const result = await upsertStation(formData);
+    const result = await updateStation(formData);
     setSaving(false);
 
     if (!result.success) {
@@ -48,12 +48,12 @@ const StationCollapse = ({
       >
         <div className="flex flex-row gap-3 items-center">
           <div className="badge badge-primary badge-lg gap-2">
-            {station.signalType === "FM" ? (
+            {station.bandType === "FM" ? (
               <Waves className="w-4 h-4" />
             ) : (
               <Radio className="w-4 h-4" />
             )}
-            {station.signalType}
+            {station.bandType}
           </div>
           <span className="text-lg">{station.name}</span>
           <span className="text-sm font-normal text-base-content/60">
@@ -103,14 +103,14 @@ const StationCollapse = ({
             </div>
             <div className="form-control">
               <ComboBox
-                name="signalType"
-                legend="Signal Type"
+                name="bandType"
+                legend="Band Type"
                 placeholder="Select Type"
                 options={[
                   { label: "AM", value: "AM" },
                   { label: "FM", value: "FM" },
                 ]}
-                defaultValue={station.signalType}
+                defaultValue={station.bandType}
                 className="w-full"
               />
             </div>

@@ -2,9 +2,8 @@
 import { Station } from "@/generated/prisma/browser";
 import { Plus } from "lucide-react";
 import { useState } from "react";
-import { v4 as uuid } from "uuid";
 import { usePopup } from "../../Popup/PopupProvider";
-import { upsertStation } from "../StationActions";
+import { createStation } from "../StationActions";
 
 const AddButton = ({ onAdd }: { onAdd?: (station: Station) => void }) => {
   const statusPopup = usePopup();
@@ -13,18 +12,7 @@ const AddButton = ({ onAdd }: { onAdd?: (station: Station) => void }) => {
   const handleClick = async () => {
     setIsLoading(true);
 
-    const newStation: Station = {
-      id: uuid(),
-      name: "New Station",
-      streamUrl: "https://test.com",
-      signalType: "FM",
-      lowestFrequency: 5,
-      highestFrequency: 5,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    const result = await upsertStation(newStation);
+    const result = await createStation();
     setIsLoading(false);
 
     if (!result.success) {

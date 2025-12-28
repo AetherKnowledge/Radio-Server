@@ -1,9 +1,9 @@
 "use server";
 
-import { SignalType, Station } from "@/generated/prisma/browser";
+import { BandType, Station } from "@/generated/prisma/browser";
 import { isAuthenticated } from "@/lib/auth-utils.server";
 import { prisma } from "@/lib/prisma";
-import { v4 as uuid } from "uuid";
+import { v4 as generateUUID } from "uuid";
 import { prettifyError } from "zod/v4/core";
 import ActionResult from "../ActionResult";
 import { StationInput, stationSchema } from "./schema";
@@ -22,7 +22,38 @@ export async function getStations(): Promise<ActionResult<Station[]>> {
   }
 }
 
-export async function upsertStation(
+export async function createStation(): Promise<ActionResult<Station>> {
+  try {
+    if (!isAuthenticated()) {
+      return { success: false, message: "Unauthorized" };
+    }
+
+    const highestFrequencyStation = await prisma.station.findFirst({
+      orderBy: { highestFrequency: "desc" },
+    });
+    const newLowestFrequency = highestFrequencyStation
+      ? highestFrequencyStation.highestFrequency + 1
+      : 5;
+
+    const station = await prisma.station.create({
+      data: {
+        id: generateUUID(),
+        name: "New Station",
+        streamUrl: "https://test.com",
+        bandType: BandType.FM,
+        lowestFrequency: newLowestFrequency,
+        highestFrequency: newLowestFrequency + 5,
+      },
+    });
+
+    return { success: true, data: station };
+  } catch (err) {
+    console.error("Error creating station:", err);
+    return { success: false, message: (err as Error).message };
+  }
+}
+
+export async function updateStation(
   data: StationInput | FormData
 ): Promise<ActionResult<Station>> {
   try {
@@ -46,10 +77,14 @@ export async function upsertStation(
       where: { id: validatedData.id || "" },
     });
 
+    if (!stationExisting) {
+      return { success: false, message: "Station not found" };
+    }
+
     const hasOverlap = await prisma.station.findFirst({
       where: {
         id: { not: validatedData.id || undefined },
-        signalType: validatedData.signalType,
+        bandType: validatedData.bandType,
         OR: [
           {
             AND: [
@@ -74,33 +109,18 @@ export async function upsertStation(
       };
     }
 
-    if (stationExisting) {
-      const station = await prisma.station.update({
-        where: { id: validatedData.id },
-        data: {
-          name: validatedData.name,
-          streamUrl: validatedData.streamUrl,
-          signalType: validatedData.signalType,
-          lowestFrequency: validatedData.lowestFrequency,
-          highestFrequency: validatedData.highestFrequency,
-        },
-      });
+    const station = await prisma.station.update({
+      where: { id: validatedData.id },
+      data: {
+        name: validatedData.name,
+        streamUrl: validatedData.streamUrl,
+        bandType: validatedData.bandType,
+        lowestFrequency: validatedData.lowestFrequency,
+        highestFrequency: validatedData.highestFrequency,
+      },
+    });
 
-      return { success: true, data: station };
-    } else {
-      const station = await prisma.station.create({
-        data: {
-          id: uuid(),
-          name: validatedData.name,
-          streamUrl: validatedData.streamUrl,
-          signalType: validatedData.signalType,
-          lowestFrequency: validatedData.lowestFrequency,
-          highestFrequency: validatedData.highestFrequency,
-        },
-      });
-
-      return { success: true, data: station };
-    }
+    return { success: true, data: station };
   } catch (err) {
     console.error("Error creating station:", err);
     return { success: false, message: (err as Error).message };
@@ -124,13 +144,13 @@ export async function deleteStation(id: string): Promise<ActionResult<void>> {
 }
 
 export async function getStation(
-  signalType: SignalType,
+  bandType: BandType,
   frequency: number
 ): Promise<ActionResult<Station>> {
   try {
     const station = await prisma.station.findFirst({
       where: {
-        signalType,
+        bandType,
         lowestFrequency: { lte: frequency },
         highestFrequency: { gte: frequency },
       },

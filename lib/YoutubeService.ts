@@ -1,3 +1,4 @@
+import { Station } from "@/generated/prisma/browser";
 import {
   ChildProcessWithoutNullStreams,
   spawn,
@@ -5,32 +6,56 @@ import {
 } from "child_process";
 import kill from "tree-kill";
 
+// #TODO: fix the vod player and allow playlists
+
 export class YoutubeService {
-  public url: string;
+  public station: Station;
   public isLive: boolean;
   public videoStream: ReadableStream<Uint8Array> | null = null;
   public ytDlpProcess: ChildProcessWithoutNullStreams | null = null;
   public ffmpegProcess: ChildProcessWithoutNullStreams | null = null;
 
-  public constructor(url: string) {
-    if (!YoutubeService.isValidYoutube(url)) {
+  private streamControllers: Set<ReadableStreamDefaultController<Uint8Array>> =
+    new Set();
+  private activeConnections: number = 0;
+  private chunkBuffer: Uint8Array[] = [];
+  private readonly MAX_BUFFER_SIZE = 50; // Keep first 50 chunks for new clients
+
+  public static playingStreams: Map<string, YoutubeService> = new Map();
+
+  private constructor(station: Station) {
+    this.station = station;
+    let url = station.streamUrl;
+    if (!YoutubeService.isValidYoutube(station.streamUrl)) {
       console.error("Invalid YouTube URL, finding latest valid video...");
-      const latest = YoutubeService.getLatestStream(url, true);
+      const latest = YoutubeService.getLatestStream(station.streamUrl);
       if (latest === null) {
         throw new Error("No valid videos found for the given URL");
       }
       url = latest;
     }
-    this.url = url;
 
     const isLive = YoutubeService.isLiveStream(url);
     if (isLive) {
       this.isLive = true;
       this.createLiveStream(url);
+      // Only cache livestreams for sharing
+      YoutubeService.playingStreams.set(station.id, this);
     } else {
       this.isLive = false;
       this.createVODStream(url);
+      // Don't cache VODs - each client gets their own from the start
     }
+  }
+
+  public static createService(station: Station): YoutubeService {
+    const existingStream = YoutubeService.playingStreams.get(station.id);
+    if (existingStream) {
+      console.log("Reusing existing livestream service");
+      return existingStream;
+    }
+    const newService = new YoutubeService(station);
+    return newService;
   }
 
   public static isValidYoutube(url: string): boolean {
@@ -96,74 +121,58 @@ export class YoutubeService {
       console.error("yt-dlp STDERR:", chunk.toString());
     });
 
-    // Create a ReadableStream from ffmpeg stdout
-    this.videoStream = new ReadableStream({
-      start(controller) {
-        let isClosed = false;
+    // Broadcast data to all connected controllers
+    this.ffmpegProcess.stdout.on("data", (chunk: Buffer) => {
+      const uint8Chunk = new Uint8Array(chunk);
 
-        const onData = (chunk: Buffer) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(chunk);
-            } catch (err) {
-              console.error("Error enqueueing chunk:", err);
-              isClosed = true;
-            }
-          }
-        };
+      // Buffer initial chunks for new clients
+      if (this.chunkBuffer.length < this.MAX_BUFFER_SIZE) {
+        console.log(
+          `Buffering chunk of size ${uint8Chunk.length} bytes current buffer size: ${this.chunkBuffer.length}`
+        );
+        this.chunkBuffer.push(uint8Chunk);
+      }
 
-        const onStderr = (chunk: Buffer) => {
-          console.error("ffmpeg STDERR:", chunk.toString());
-        };
+      this.streamControllers.forEach((controller) => {
+        try {
+          controller.enqueue(uint8Chunk);
+        } catch (err) {
+          console.error("Error enqueueing chunk to controller:", err);
+          this.streamControllers.delete(controller);
+        }
+      });
+    });
 
-        const onClose = (code: number | null) => {
-          if (isClosed) return;
-          isClosed = true;
+    this.ffmpegProcess.stderr.on("data", (chunk: Buffer) => {
+      console.error("ffmpeg STDERR:", chunk.toString());
+    });
 
-          ffmpeg.stdout.removeListener("data", onData);
-          ffmpeg.stderr.removeListener("data", onStderr);
-
+    this.ffmpegProcess.on("close", (code: number | null) => {
+      console.log(`ffmpeg closed with code ${code}`);
+      this.streamControllers.forEach((controller) => {
+        try {
           if (code === 0) {
-            try {
-              controller.close();
-            } catch (err) {
-              console.error("Error closing controller:", err);
-            }
+            controller.close();
           } else {
-            try {
-              controller.error(new Error(`ffmpeg exited with code ${code}`));
-            } catch (err) {
-              console.error("Error erroring controller:", err);
-            }
+            controller.error(new Error(`ffmpeg exited with code ${code}`));
           }
-        };
-
-        const onError = (err: Error) => {
-          console.error("Process error:", err);
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.error(err);
-            } catch (e) {
-              console.error("Error erroring controller:", e);
-            }
-          }
-        };
-
-        ffmpeg.stdout.on("data", onData);
-        ffmpeg.stderr.on("data", onStderr);
-        ffmpeg.on("close", onClose);
-        ffmpeg.on("error", onError);
-      },
-      cancel() {
-        console.log("Stream cancelled, killing processes");
-        if (ffmpeg.pid) {
-          kill(ffmpeg.pid);
+        } catch (err) {
+          console.error("Error closing controller:", err);
         }
-        if (ytdlp.pid) {
-          kill(ytdlp.pid);
+      });
+      this.streamControllers.clear();
+    });
+
+    this.ffmpegProcess.on("error", (err: Error) => {
+      console.error("ffmpeg error:", err);
+      this.streamControllers.forEach((controller) => {
+        try {
+          controller.error(err);
+        } catch (e) {
+          console.error("Error erroring controller:", e);
         }
-      },
+      });
+      this.streamControllers.clear();
     });
   }
 
@@ -171,83 +180,66 @@ export class YoutubeService {
     const ytdlp = spawn("yt-dlp", [
       "-f",
       "bestaudio/worstvideo*",
+      "--no-playlist",
       "-o",
       "-",
       url,
     ]);
     this.ytDlpProcess = ytdlp;
 
-    this.videoStream = new ReadableStream({
-      start(controller) {
-        let isClosed = false;
+    // Broadcast data to all connected controllers
+    ytdlp.stdout.on("data", (chunk: Buffer) => {
+      const uint8Chunk = new Uint8Array(chunk);
 
-        const onData = (chunk: Buffer) => {
-          if (!isClosed) {
-            try {
-              controller.enqueue(chunk);
-            } catch (err) {
-              console.error("Error enqueueing chunk:", err);
-              isClosed = true;
-              if (ytdlp.pid) {
-                kill(ytdlp.pid);
-              }
-            }
-          }
-        };
+      // Buffer initial chunks for new clients
+      if (this.chunkBuffer.length < this.MAX_BUFFER_SIZE) {
+        this.chunkBuffer.push(uint8Chunk);
+      }
 
-        const onStderr = (chunk: Buffer) => {
-          console.error("STDERR:", chunk.toString());
-        };
-
-        const onClose = (code: number | null) => {
-          if (isClosed) return;
-          isClosed = true;
-
-          ytdlp.stdout.removeListener("data", onData);
-          ytdlp.stderr.removeListener("data", onStderr);
-
-          if (code === 0) {
-            try {
-              controller.close();
-            } catch (err) {
-              console.error("Error closing controller:", err);
-            }
-          } else {
-            try {
-              controller.error(new Error(`yt-dlp exited with code ${code}`));
-            } catch (err) {
-              console.error("Error erroring controller:", err);
-            }
-          }
-        };
-
-        const onError = (err: Error) => {
-          console.error("Process error:", err);
-          if (!isClosed) {
-            isClosed = true;
-            try {
-              controller.error(err);
-            } catch (e) {
-              console.error("Error erroring controller:", e);
-            }
-          }
-        };
-
-        ytdlp.stdout.on("data", onData);
-        ytdlp.stderr.on("data", onStderr);
-        ytdlp.on("close", onClose);
-        ytdlp.on("error", onError);
-      },
-      cancel() {
-        console.log("Stream cancelled, killing yt-dlp and all child processes");
-        if (ytdlp.pid) {
-          kill(ytdlp.pid);
+      this.streamControllers.forEach((controller) => {
+        try {
+          controller.enqueue(uint8Chunk);
+        } catch (err) {
+          console.error("Error enqueueing chunk to controller:", err);
+          this.streamControllers.delete(controller);
         }
-      },
+      });
+    });
+
+    ytdlp.stderr.on("data", (chunk: Buffer) => {
+      console.error("yt-dlp STDERR:", chunk.toString());
+    });
+
+    ytdlp.on("close", (code: number | null) => {
+      console.log(`yt-dlp closed with code ${code}`);
+      this.streamControllers.forEach((controller) => {
+        try {
+          if (code === 0) {
+            controller.close();
+          } else {
+            controller.error(new Error(`yt-dlp exited with code ${code}`));
+          }
+        } catch (err) {
+          console.error("Error closing controller:", err);
+        }
+      });
+      this.streamControllers.clear();
+    });
+
+    ytdlp.on("error", (err: Error) => {
+      console.error("yt-dlp error:", err);
+      this.streamControllers.forEach((controller) => {
+        try {
+          controller.error(err);
+        } catch (e) {
+          console.error("Error erroring controller:", e);
+        }
+      });
+      this.streamControllers.clear();
     });
   }
 
-  public static getLatestStream(channelUrl: string, requireLive = false) {
+  public static getLatestStream(channelUrl: string, requireLive = true) {
     const result = spawnSync(
       "yt-dlp",
       [
@@ -260,8 +252,6 @@ export class YoutubeService {
       ],
       { encoding: "utf-8" }
     );
-
-    console.log("yt-dlp output:", result.stdout);
 
     if (result.status !== 0) {
       console.error("yt-dlp error:", result.stderr);
@@ -282,7 +272,51 @@ export class YoutubeService {
     return liveOrVOD[0]?.url || null;
   }
 
-  public stopStream() {
+  public createStreamForClient(): ReadableStream<Uint8Array> {
+    this.activeConnections++;
+    console.log(`Active connections: ${this.activeConnections}`);
+
+    return new ReadableStream({
+      start: (controller) => {
+        // Send buffered chunks to new client first
+        console.log(
+          `Sending ${this.chunkBuffer.length} buffered chunks to new client`
+        );
+        for (const chunk of this.chunkBuffer) {
+          try {
+            controller.enqueue(chunk);
+          } catch (err) {
+            console.error("Error enqueueing buffered chunk:", err);
+            return;
+          }
+        }
+
+        // Add controller to receive live data
+        this.streamControllers.add(controller);
+      },
+      cancel: () => {
+        this.activeConnections--;
+        console.log(
+          `Connection closed. Active connections: ${this.activeConnections}`
+        );
+
+        // Only kill processes when all connections are closed
+        if (this.activeConnections === 0) {
+          console.log("No active connections, stopping stream");
+          this.stopStream();
+          // Only remove from cache if it was cached (livestreams only)
+          if (this.isLive) {
+            YoutubeService.playingStreams.delete(this.station.id);
+          }
+        }
+      },
+    });
+  }
+
+  private stopStream() {
+    this.streamControllers.clear();
+    this.chunkBuffer = [];
+
     if (this.ffmpegProcess && this.ffmpegProcess.pid) {
       kill(this.ffmpegProcess.pid);
     }
